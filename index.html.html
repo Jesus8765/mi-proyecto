@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Simulador 3D · Ecuación de continuidad</title>
+<style>
+:root{color-scheme:dark;--bg:#0d1120;--panel:#161b2e;--line:#2a3150;--tx:#e6e9f5;--mut:#98a2c8;--ac:#4cc9f0;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--tx);font:14px/1.4 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+#app{display:grid;grid-template-columns:310px 1fr;grid-template-rows:minmax(0,1fr) 250px;gap:10px;height:100%;padding:10px;box-sizing:border-box}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;min-width:0}
+#panel{grid-row:1/3;padding:14px;overflow-y:auto}
+h1{font-size:16px;margin:0 0 2px}
+.sub{color:var(--mut);font-size:12px;margin-bottom:12px}
+label{display:block;margin:10px 0 3px;color:var(--mut);font-size:12px}
+label b{color:var(--tx);float:right;font-weight:600}
+select,input[type=range],button{width:100%;box-sizing:border-box}
+select,button{background:#1d2440;color:var(--tx);border:1px solid var(--line);border-radius:8px;padding:8px;font:inherit}
+button{cursor:pointer;margin-top:12px}button:hover{border-color:var(--ac)}
+input[type=range]{accent-color:var(--ac)}
+.bar{height:10px;border-radius:6px;margin-top:14px;background:linear-gradient(90deg,hsl(240,100%,50%),hsl(180,100%,50%),hsl(120,100%,50%),hsl(60,100%,50%),hsl(0,100%,50%))}
+.lg{display:flex;justify-content:space-between;color:var(--mut);font-size:11px;margin-top:2px}
+#stats{margin-top:12px;font-size:12px;border-top:1px solid var(--line);padding-top:8px}
+#stats div{display:flex;justify-content:space-between;padding:2px 0}#stats span{color:var(--mut)}
+.hint{color:var(--mut);font-size:11px;margin-top:10px}
+#view{position:relative;overflow:hidden}
+#view canvas{display:block;width:100%;height:100%}
+#tag{position:absolute;left:12px;top:10px;font-size:12px;color:var(--mut);pointer-events:none}
+#charts{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;min-height:0}
+#probe{position:absolute;right:10px;top:10px;background:rgba(13,17,32,.88);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:12px;min-width:175px;pointer-events:none}
+#probe div{display:flex;justify-content:space-between;gap:12px}#probe span{color:var(--mut)}#probe h4{margin:0 0 4px;font-size:12px;color:#ffd166}
+#warn{position:absolute;left:12px;bottom:10px;font-size:13px;font-weight:600;color:#ff6b6b;pointer-events:none}
+.cw{padding:8px;position:relative;min-height:0}
+@media(max-width:820px){
+ html,body{height:auto}
+ #app{grid-template-columns:1fr;grid-template-rows:auto 60vh 260px 260px 260px;height:auto}
+ #panel{grid-row:auto}
+ #charts{display:contents}
+}
+</style>
+</head>
+<body>
+<div id="app">
+ <aside id="panel" class="card">
+  <h1>Ecuación de continuidad</h1>
+  <div class="sub">Q = v(x) · A(x) &nbsp;→&nbsp; v(x) = Q / A(x)</div>
+  <label>Geometría</label>
+  <select id="type">
+   <option value="venturi">Tubo Venturi</option>
+   <option value="reduccion">Reducción cónica</option>
+   <option value="expansion">Expansión cónica</option>
+   <option value="abrupta">Reducción abrupta</option>
+   <option value="recta">Tubería recta</option>
+  </select>
+  <label>Caudal Q (m³/s) <b id="oQ"></b></label>
+  <input id="Q" type="range" min="0.001" max="0.05" step="0.001" value="0.005">
+  <label>Diámetro de entrada D₁ (m) <b id="oD1"></b></label>
+  <input id="D1" type="range" min="0.05" max="0.30" step="0.005" value="0.10">
+  <label>Diámetro de salida D₂ (m) <b id="oD2"></b></label>
+  <input id="D2" type="range" min="0.02" max="0.30" step="0.005" value="0.05">
+  <label>Longitud L (m) <b id="oL"></b></label>
+  <input id="L" type="range" min="0.5" max="5" step="0.1" value="1">
+  <label>Densidad ρ (kg/m³) <b id="orho"></b></label>
+  <input id="rho" type="range" min="600" max="1600" step="10" value="1000">
+  <label>Escala temporal de la animación <b id="ots"></b></label>
+  <input id="ts" type="range" min="0.1" max="5" step="0.1" value="1">
+  <label>Presión de entrada p₁ (kPa abs.) <b id="op1"></b></label>
+  <input id="p1" type="range" min="20" max="400" step="1" value="101">
+  <label>Presión de vapor pᵥ (kPa) <b id="opv"></b></label>
+  <input id="pv" type="range" min="1" max="50" step="0.1" value="2.3">
+  <label>Sonda: posición a lo largo del tubo <b id="opr"></b></label>
+  <input id="pr" type="range" min="0" max="100" step="1" value="25">
+  <button id="pause">Pausar animación</button>
+  <div class="bar"></div>
+  <div class="lg"><span id="cmin">v mín</span><span>velocidad</span><span id="cmax">v máx</span></div>
+  <div id="stats"></div>
+  <div class="hint">Reducción, Venturi y reducción abrupta llevan la sección hasta D₂ (si D₂ &gt; D₁ se limita a D₁); la expansión cónica llega a max(D₁, D₂). Arrastre para rotar, rueda para zoom, clic derecho para trasladar.</div>
+ </aside>
+ <section id="view" class="card"><div id="tag">Partículas coloreadas por velocidad · azul = lenta, rojo = rápida · blanco = cavitación</div><div id="probe"></div><div id="warn"></div></section>
+ <div id="charts">
+  <div class="card cw"><canvas id="c1"></canvas></div>
+  <div class="card cw"><canvas id="c2"></canvas></div>
+  <div class="card cw"><canvas id="c3"></canvas></div>
+ </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script>
+(function(){
+"use strict";
+var $=function(id){return document.getElementById(id);};
+var P={type:"venturi",Q:0.005,D1:0.10,D2:0.05,L:1,rho:1000,ts:1,paused:false,p1:101,pv:2.3,pr:0.25};
+var ps=[];
+var N=240, xs=[], Ds=[], vs=[], as=[], vmin=0, vmax=1;
+
+/* ---------- Modelo físico ---------- */
+function blend(a,b,t){t=Math.min(1,Math.max(0,t));return a+(b-a)*(0.5-0.5*Math.cos(Math.PI*t));}
+function Dx(x){
+  var s=x/P.L, lo=Math.min(P.D1,P.D2), hi=Math.max(P.D1,P.D2), D1=P.D1;
+  switch(P.type){
+    case "recta": return D1;
+    case "reduccion": return D1+(lo-D1)*s;
+    case "expansion": return D1+(hi-D1)*s;
+    case "abrupta": return D1+(lo-D1)*(0.5+0.5*Math.tanh((s-0.5)/0.01));
+    default: return s<0.3?blend(D1,lo,s/0.3):(s<0.5?lo:blend(lo,D1,(s-0.5)/0.5));
+  }
+}
+function compute(){
+  xs=[];Ds=[];vs=[];
+  for(var i=0;i<=N;i++){
+    var x=P.L*i/N, d=Dx(x);
+    xs.push(x);Ds.push(d);vs.push(P.Q/(Math.PI*d*d/4)); /* v = Q / A */
+  }
+  as=vs.map(function(v,i){
+    var i0=Math.max(0,i-1), i1=Math.min(N,i+1);
+    return v*(vs[i1]-vs[i0])/(xs[i1]-xs[i0]);           /* a_x = v dv/dx */
+  });
+  /* Bernoulli ideal: p(x) = p1 + ½ρ(v1² − v²), en kPa */
+  ps=vs.map(function(v){return P.p1+0.5*P.rho*(vs[0]*vs[0]-v*v)/1000;});
+  vmin=Math.min.apply(null,vs); vmax=Math.max.apply(null,vs);
+  if(vmax-vmin<1e-9){vmax=vmin+1e-9;}
+}
+
+/* ---------- Escena 3D ---------- */
+var view=$("view"), scene=new THREE.Scene();
+scene.background=new THREE.Color(0x0d1120);
+var camera=new THREE.PerspectiveCamera(45,1,0.1,200);
+camera.position.set(0,2.6,6.6);
+var renderer=new THREE.WebGLRenderer({antialias:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio||1,2));
+view.appendChild(renderer.domElement);
+var controls=new THREE.OrbitControls(camera,renderer.domElement);
+controls.enableDamping=true;
+scene.add(new THREE.AmbientLight(0xffffff,0.6));
+var dl=new THREE.DirectionalLight(0xffffff,0.8);dl.position.set(3,5,4);scene.add(dl);
+var grid=new THREE.GridHelper(12,24,0x2a3150,0x1d2440);grid.position.y=-1.6;scene.add(grid);
+
+function SC(){return 4/P.L;} /* metros → unidades de escena (tubo de 4 u de largo) */
+var pipe=null;
+function buildPipe(){
+  if(pipe){
+    scene.remove(pipe);
+    pipe.children.forEach(function(m){m.geometry.dispose();m.material.dispose();});
+  }
+  var s=SC(), pts=[], ptw=[], i;
+  for(i=0;i<=N;i++){pts.push(new THREE.Vector2(Ds[i]/2*s,(xs[i]-P.L/2)*s));}
+  for(i=0;i<=N;i+=4){ptw.push(new THREE.Vector2(Ds[i]/2*s,(xs[i]-P.L/2)*s));}
+  var solid=new THREE.Mesh(new THREE.LatheGeometry(pts,64),
+    new THREE.MeshPhongMaterial({color:0x4cc9f0,transparent:true,opacity:0.14,side:THREE.DoubleSide,depthWrite:false}));
+  var wire=new THREE.Mesh(new THREE.LatheGeometry(ptw,28),
+    new THREE.MeshBasicMaterial({color:0x7fd8f5,wireframe:true,transparent:true,opacity:0.22}));
+  pipe=new THREE.Group();pipe.add(solid);pipe.add(wire);
+  pipe.rotation.z=-Math.PI/2; /* eje Y de la malla de revolución → eje X del mundo */
+  scene.add(pipe);
+}
+
+/* ---------- Partículas ---------- */
+var NP=2600, px=new Float32Array(NP), rr=new Float32Array(NP), th=new Float32Array(NP);
+var pos=new Float32Array(NP*3), col=new Float32Array(NP*3);
+var pg=new THREE.BufferGeometry();
+pg.setAttribute("position",new THREE.BufferAttribute(pos,3));
+pg.setAttribute("color",new THREE.BufferAttribute(col,3));
+var points=new THREE.Points(pg,new THREE.PointsMaterial({size:0.045,vertexColors:true,sizeAttenuation:true}));
+points.frustumCulled=false;scene.add(points);
+function respawn(k,x){px[k]=x;rr[k]=Math.sqrt(Math.random())*0.94;th[k]=Math.random()*Math.PI*2;}
+for(var k=0;k<NP;k++){respawn(k,Math.random()*P.L);}
+var tmp=new THREE.Color();
+function idx(x){return Math.max(0,Math.min(N,Math.round(x/P.L*N)));}
+function step(dt){
+  var s=SC();
+  for(var k=0;k<NP;k++){
+    var i=idx(px[k]);
+    if(!P.paused){
+      px[k]+=vs[i]*dt*P.ts;
+      if(px[k]>P.L){respawn(k,px[k]-P.L);i=idx(px[k]);}
+    }
+    var R=Ds[i]/2*rr[k];
+    pos[3*k]=(px[k]-P.L/2)*s;
+    pos[3*k+1]=R*Math.cos(th[k])*s;
+    pos[3*k+2]=R*Math.sin(th[k])*s;
+    if(ps[i]<P.pv){tmp.setRGB(1,1,1);}else{tmp.setHSL(0.66*(1-(vs[i]-vmin)/(vmax-vmin)),1,0.55);} /* azul → rojo */
+    col[3*k]=tmp.r;col[3*k+1]=tmp.g;col[3*k+2]=tmp.b;
+  }
+  pg.attributes.position.needsUpdate=true;
+  pg.attributes.color.needsUpdate=true;
+}
+
+/* ---------- Gráficos ---------- */
+function mkChart(id,label,color,ytxt){
+  return new Chart($(id),{type:"line",
+    data:{labels:[],datasets:[{label:label,data:[],borderColor:color,backgroundColor:color+"33",pointRadius:0,borderWidth:2,fill:true,tension:0.1}]},
+    options:{animation:false,responsive:true,maintainAspectRatio:false,
+      scales:{
+        x:{title:{display:true,text:"x (m)",color:"#98a2c8"},ticks:{color:"#98a2c8",maxTicksLimit:8},grid:{color:"#222a45"}},
+        y:{title:{display:true,text:ytxt,color:"#98a2c8"},ticks:{color:"#98a2c8"},grid:{color:"#222a45"}}},
+      plugins:{legend:{labels:{color:"#e6e9f5"}}}}});
+}
+var ch1=mkChart("c1","Perfil de velocidad v(x) = Q/A(x)","#4cc9f0","v (m/s)");
+var ch2=mkChart("c2","Aceleración convectiva a\u2093(x) = v·dv/dx","#f72585","a\u2093 (m/s²)");
+var ch3=mkChart("c3","Presión p(x) (Bernoulli ideal)","#06d6a0","p (kPa)");
+ch3.data.datasets.push({label:"Presión de vapor pᵥ",data:[],borderColor:"#ffd166",borderDash:[6,4],pointRadius:0,borderWidth:2,fill:false});
+function updCharts(){
+  var lab=xs.map(function(x){return x.toFixed(2);});
+  ch1.data.labels=lab;ch1.data.datasets[0].data=vs.slice();ch1.update();
+  ch2.data.labels=lab;ch2.data.datasets[0].data=as.slice();ch2.update();
+  ch3.data.labels=lab;ch3.data.datasets[0].data=ps.slice();ch3.data.datasets[1].data=lab.map(function(){return P.pv;});ch3.update();
+}
+
+/* ---------- Interfaz ---------- */
+function fmt(v,d){return Number(v).toFixed(d);}
+function readUI(){
+  P.type=$("type").value;
+  P.Q=+$("Q").value;P.D1=+$("D1").value;P.D2=+$("D2").value;
+  P.L=+$("L").value;P.rho=+$("rho").value;P.ts=+$("ts").value;
+  P.p1=+$("p1").value;P.pv=+$("pv").value;P.pr=+$("pr").value/100;
+  $("oQ").textContent=fmt(P.Q,3);$("oD1").textContent=fmt(P.D1,3);$("oD2").textContent=fmt(P.D2,3);
+  $("oL").textContent=fmt(P.L,1);
+  $("op1").textContent=fmt(P.p1,0)+" kPa";$("opv").textContent=fmt(P.pv,1)+" kPa";$("opr").textContent=fmt(P.pr*100,0)+" %";$("orho").textContent=P.rho;$("ots").textContent="×"+fmt(P.ts,1);
+}
+function updStats(){
+  var amax=0;as.forEach(function(a){if(Math.abs(a)>Math.abs(amax)){amax=a;}});
+  var A1=Math.PI*Ds[0]*Ds[0]/4, Amin=Math.PI*Math.min.apply(null,Ds)*Math.pow(1,2)*Math.min.apply(null,Ds)/4;
+  var rows=[["v entrada",fmt(vs[0],3)+" m/s"],["v salida",fmt(vs[N],3)+" m/s"],
+    ["v máxima",fmt(vmax,3)+" m/s"],["a\u2093 extrema",fmt(amax,2)+" m/s²"],
+    ["Relación A₁/A mín",fmt(A1/Amin,2)],["Gasto másico ρQ",fmt(P.rho*P.Q,2)+" kg/s"],
+    ["Presión dinámica máx ½ρv²",fmt(0.5*P.rho*vmax*vmax/1000,2)+" kPa"],
+    ["∫a\u2093dx = Δ(v²/2)",fmt((vs[N]*vs[N]-vs[0]*vs[0])/2,3)+" m²/s²"]];
+  var pmin=Math.min.apply(null,ps);
+  rows.push(["Presión mínima",fmt(pmin,1)+" kPa"]);
+  rows.push(["Cavitación",pmin<P.pv?"SÍ (p mín < pᵥ)":"No"]);
+  $("stats").innerHTML=rows.map(function(r){return "<div><span>"+r[0]+"</span><b>"+r[1]+"</b></div>";}).join("");
+  $("cmin").textContent=fmt(vmin,2)+" m/s";$("cmax").textContent=fmt(vmax,2)+" m/s";
+  $("warn").textContent=pmin<P.pv?"⚠ Riesgo de cavitación: p mín < presión de vapor (el modelo ideal deja de ser válido)":"";
+}
+function update(){
+  readUI();compute();buildPipe();updCharts();updStats();updProbe();
+  for(var k=0;k<NP;k++){if(px[k]>P.L){px[k]=Math.random()*P.L;}}
+}
+["type","Q","D1","D2","L","rho","ts","p1","pv"].forEach(function(id){
+  $(id).addEventListener("input",update);$(id).addEventListener("change",update);
+});
+$("pause").addEventListener("click",function(){
+  P.paused=!P.paused;this.textContent=P.paused?"Reanudar animación":"Pausar animación";
+});
+
+/* ---------- Sonda arrastrable ---------- */
+var ring=new THREE.Mesh(new THREE.TorusGeometry(1,0.07,12,64),new THREE.MeshBasicMaterial({color:0xffd166}));
+ring.rotation.y=Math.PI/2; /* eje del anillo = eje del tubo */
+var probeG=new THREE.Group();probeG.add(ring);scene.add(probeG);
+function updProbe(){
+  var i=idx(P.pr*P.L), s=SC(), r=Ds[i]/2*s*1.04;
+  probeG.position.x=(xs[i]-P.L/2)*s;probeG.scale.set(r,r,r);
+  var A=Math.PI*Ds[i]*Ds[i]/4;
+  $("probe").innerHTML="<h4>Sonda · x = "+fmt(xs[i],3)+" m</h4>"+
+    "<div><span>D</span><b>"+fmt(Ds[i]*1000,1)+" mm</b></div>"+
+    "<div><span>A</span><b>"+fmt(A*10000,2)+" cm²</b></div>"+
+    "<div><span>v = Q/A</span><b>"+fmt(vs[i],3)+" m/s</b></div>"+
+    "<div><span>aₓ = v·dv/dx</span><b>"+fmt(as[i],2)+" m/s²</b></div>"+
+    "<div><span>p (Bernoulli)</span><b style=\"color:"+(ps[i]<P.pv?"#ff6b6b":"inherit")+"\">"+fmt(ps[i],2)+" kPa</b></div>";
+}
+function setPr(f){
+  P.pr=Math.max(0,Math.min(1,f));$("pr").value=Math.round(P.pr*100);
+  $("opr").textContent=fmt(P.pr*100,0)+" %";updProbe();
+}
+$("pr").addEventListener("input",function(){setPr(+this.value/100);});
+var ray=new THREE.Raycaster(), mouse=new THREE.Vector2(), drag=false;
+var plane=new THREE.Plane(new THREE.Vector3(0,0,1),0), hitP=new THREE.Vector3();
+function setM(e){
+  var b=renderer.domElement.getBoundingClientRect();
+  mouse.set((e.clientX-b.left)/b.width*2-1,-((e.clientY-b.top)/b.height)*2+1);
+  ray.setFromCamera(mouse,camera);
+}
+renderer.domElement.addEventListener("pointerdown",function(e){
+  setM(e);
+  if(ray.intersectObject(ring).length){drag=true;controls.enabled=false;renderer.domElement.setPointerCapture(e.pointerId);}
+});
+renderer.domElement.addEventListener("pointermove",function(e){
+  setM(e);
+  if(!drag){renderer.domElement.style.cursor=ray.intersectObject(ring).length?"ew-resize":"";return;}
+  if(ray.ray.intersectPlane(plane,hitP)){setPr((hitP.x/SC()+P.L/2)/P.L);}
+});
+function endDrag(){drag=false;controls.enabled=true;}
+renderer.domElement.addEventListener("pointerup",endDrag);
+renderer.domElement.addEventListener("pointercancel",endDrag);
+
+function resize(){
+  var w=view.clientWidth,h=view.clientHeight;
+  if(!w||!h){return;}
+  renderer.setSize(w,h,false);
+  camera.aspect=w/h;camera.updateProjectionMatrix();
+}
+if(window.ResizeObserver){new ResizeObserver(resize).observe(view);}
+window.addEventListener("resize",resize);
+
+var clock=new THREE.Clock();
+function loop(){
+  requestAnimationFrame(loop);
+  var dt=Math.min(clock.getDelta(),0.05);
+  step(dt);controls.update();renderer.render(scene,camera);
+}
+update();resize();loop();
+})();
+</script>
+</body>
+</html>
